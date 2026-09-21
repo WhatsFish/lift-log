@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   // Nginx authenticates and overwrites this header; the app port is loopback-only.
   if (request.nextUrl.pathname === "/api/health") return NextResponse.next();
   if (!request.headers.get("x-lift-user")) {

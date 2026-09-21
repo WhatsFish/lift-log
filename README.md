@@ -107,9 +107,11 @@ container on an untrusted network. Health returns only availability. Mutations
 require the configured same-origin JSON request; exported JSON contains private
 training information.
 
-Next.js is pinned to **14.2.35**, rather than the fleet's 14.2.18, to incorporate
-available security patches without changing the framework major or React
-version. Next 14 is an older maintenance line: review current upstream
-advisories before Internet deployment; updating to this patch is not a claim
-that all advisories against the framework line are resolved. No image
-optimization, server actions, user-authored HTML or URL rewrites are used.
+This new service uses **Next.js 16.3.5 / React 19.3.0**, rather than the fleet's
+Next 14 / React 18 baseline. The older Next 14 line still had unresolved
+production dependency advisories even after updating to 14.2.35. This scoped
+deviation keeps the new app on a patched framework without changing existing
+services. Node 22, TypeScript, pg, App Router, Tailwind and the deployment pattern
+remain consistent with the fleet. Builds use webpack for predictable VM
+resource usage. Read version-matched Next documentation under
+`web/node_modules/next/dist/docs/` before future framework changes.

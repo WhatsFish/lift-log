@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3015",
-    "build": "next build",
+    "build": "next build --webpack",
     "postbuild": "node scripts/prepare-standalone.mjs",
     "start": "HOSTNAME=127.0.0.1 PORT=3015 node .next/standalone/server.js",
     "typecheck": "tsc --noEmit",
@@ -12,18 +12,18 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "next": "14.2.35",
+    "next": "16.3.5",
     "pg": "~8.13.1",
-    "react": "18.3.1",
-    "react-dom": "18.3.1",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {
     "@playwright/test": "^1.51.0",
     "@types/node": "20.16.10",
     "@types/pg": "^8.11.10",
-    "@types/react": "18.3.12",
-    "@types/react-dom": "18.3.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.15",
