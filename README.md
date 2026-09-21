@@ -67,29 +67,31 @@ standalone server used in the container.
 ## Production deployment
 
 1. Obtain operator approval before creating or editing private credentials.
-   Create independent `openssl rand -hex 32` values for `LIFT_PG_PASSWORD` and
-   `LIFT_MONITOR_PG_PASSWORD` in `~/.config/lift-log.env` (mode 600), then
-   `bash db/bootstrap.sh`. The bootstrap never changes an existing role password.
-2. Create the gitignored `.env` (mode 600), using `.env.example`, with
-   `PG_PASSWORD` set to the app role's password. Keep `PUBLIC_ORIGIN` equal to the
-   external HTTPS origin, with no path or trailing slash.
+   Pass the chosen login key through stdin to `node scripts/provision-env.mjs`.
+   It creates independent app/monitor passwords in `~/.config/lift-log.env`,
+   writes the app `.env` with a SHA-256 key digest and a random session signing
+   secret, and appends read-only monitoring credentials to the status `.env`.
+   All private files are mode 600; existing service credentials are never
+   overwritten. Then run `bash db/bootstrap.sh`.
+2. Keep `PUBLIC_ORIGIN` equal to the external HTTPS origin, with no path or
+   trailing slash. Never put the key, key digest, or signing secret in source.
 3. `docker compose up -d --build`. App port: loopback `3015`. Container joins
    `traffic-monitor_default`, uses the shared `db`, runs as non-root, and has a
    read-only filesystem. PostgreSQL is the only completed-record storage.
-4. With operator approval, reuse the existing `/trading` Basic Auth file (or
-   provision a separate one). Install both `nginx/*.conf` files into
-   `/etc/nginx/snippets/`; add `include snippets/lift-log.conf;` to the HTTPS
+4. Install `nginx/lift-log-rate-limit.conf` into `/etc/nginx/conf.d/`.
+   Install the other two `nginx/*.conf` files into `/etc/nginx/snippets/`;
+   add `include snippets/lift-log.conf;` to the HTTPS
    server in `/etc/nginx/sites-enabled/personal-site`, preserving other routes.
    Run `sudo nginx -t && sudo nginx -s reload`.
 5. Merge the `feat/lift-log` integration branches in `WhatsFish/site-index` and
-   `WhatsFish/status`. Append `LIFT_PG_USER=lift_log_monitor`,
-   `LIFT_PG_DB=lift_log`, and `LIFT_PG_PASSWORD=<monitor password>` to the status
-   `.env` **only with approval**, then rebuild its `web` container.
+   `WhatsFish/status`, then rebuild the status `web` container. The provisioning
+   script already adds `LIFT_PG_*` for the least-privileged monitoring role.
 6. Operator creates an Umami website if tracking is desired, then supplies
    `NEXT_PUBLIC_UMAMI_SRC` and `NEXT_PUBLIC_UMAMI_WEBSITE_ID`. The layout enables
    the script only when both are configured. No personal training fields are
    sent as analytics events.
-7. Verify public health is 200, private routes are 401 without credentials, then
+7. Verify public health is 200, private APIs are 401 without a session and the
+   home page redirects to `/lift-log/login`, then
    check authenticated phone workflows and the status group. Back up the
    `lift_log` database using the fleet's PostgreSQL backup procedure.
 
@@ -100,12 +102,15 @@ sets, notes, goals or PRs.
 
 ### Trust boundary and dependency note
 
-This is a single-owner app behind nginx Basic Auth, not multi-user SaaS. Nginx
-must overwrite `X-Lift-User`, clear `X-Middleware-Subrequest`, and authenticate
-all private paths. Never expose port 3015 beyond loopback or publish the
-container on an untrusted network. Health returns only availability. Mutations
-require the configured same-origin JSON request; exported JSON contains private
-training information.
+This is a single-owner key-login app, not multi-user SaaS. The key is checked
+using a constant-time digest comparison; it is not embedded in client code.
+HMAC-signed sessions last seven days in HttpOnly, Secure, SameSite=Strict cookies.
+Nginx rate-limits login both per IP and globally. A weak chosen key remains weaker
+than a long random key despite throttling. Changing `SESSION_SECRET` invalidates
+all sessions; changing only the key digest does not revoke existing sessions.
+Never expose port 3015 beyond loopback or publish the container on an untrusted
+network. Health returns only availability. Mutations require same-origin JSON;
+exported JSON contains private training information.
 
 This new service uses **Next.js 16.3.5 / React 19.3.0**, rather than the fleet's
 Next 14 / React 18 baseline. The older Next 14 line still had unresolved

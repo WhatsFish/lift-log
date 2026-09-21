@@ -33,6 +33,7 @@ export function Dashboard() {
     setBusy(true); setError("");
     try {
       const response = await fetch("/lift-log/api/state", { cache: "no-store" });
+      if (response.status === 401) { window.location.assign("/lift-log/login"); return; }
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "无法加载数据");
       setState(body); setLoaded(true);
@@ -75,6 +76,7 @@ export function Dashboard() {
       const response = await fetch("/lift-log/api/state", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(action),
       });
+      if (response.status === 401) { window.location.assign("/lift-log/login"); return false; }
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "保存失败");
       setState(body); setLoaded(true); setNotice("已保存到服务器");
@@ -135,7 +137,15 @@ export function Dashboard() {
 
   return <main className="shell">
     <header className="topbar"><a href="/lift-log" className="brand"><span className="brand-mark">L</span> LIFT LOG</a>
-      <span className="tag">{state.settings.mode === "cut" ? "减脂 · 保留力量" : "维持 · 稳步进阶"}</span></header>
+      <button className="text-button" disabled={busy} onClick={async () => {
+        if (draft && !window.confirm("本机有未完成的训练草稿，退出不会删除。确认退出？")) return;
+        setBusy(true);
+        try {
+          const response = await fetch("/lift-log/api/logout", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+          if (!response.ok && response.status !== 401) throw new Error("退出失败，请重试");
+          window.location.assign("/lift-log/login");
+        } catch (e) { setError(errorText(e)); setBusy(false); }
+      }}>退出登录</button></header>
     <div aria-live="polite">
       {!online && <div className="alert">当前离线：训练草稿保存在本机，联网后才能完成服务器打卡。请勿清除浏览器数据。</div>}
       {error && <div className="alert error" role="alert">{error}<button onClick={() => void load()} disabled={busy}>加载最新数据</button></div>}

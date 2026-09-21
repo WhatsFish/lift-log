@@ -2,10 +2,14 @@ import { test, expect } from "@playwright/test";
 import { Pool } from "pg";
 import { randomUUID } from "node:crypto";
 
-test.beforeEach(async () => {
+test.beforeEach(async ({ context, request }) => {
   const db = new Pool({ host: "127.0.0.1", port: 55435, database: "lift_test", user: "lift_test", password: "ephemeral-test-only" });
   try { await db.query("TRUNCATE app_state"); }
   finally { await db.end(); }
+  for (const client of [context.request, request]) {
+    const login = await client.post("http://127.0.0.1:3015/lift-log/api/login", { data: { key: "test-only-key" } });
+    expect(login.status()).toBe(200);
+  }
 });
 
 test("mobile workout, local draft, goals, cardio, export and durable records", async ({ page, request }) => {
@@ -118,4 +122,28 @@ test("small phone viewport has no horizontal overflow", async ({ page }) => {
     await page.getByRole("button", { name: tab, exact: true }).click();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
   }
+});
+
+test("key login rejects wrong keys, persists a session and supports logout", async ({ page, context, playwright }) => {
+  await context.clearCookies();
+  await page.goto("/lift-log");
+  await expect(page).toHaveURL(/\/lift-log\/login$/);
+  await page.getByLabel("登录 Key").fill("wrong");
+  await page.getByRole("button", { name: "进入训练日志" }).click();
+  await expect(page.locator(".alert.error")).toHaveText("Key 不正确");
+  await page.getByLabel("登录 Key").fill("test-only-key");
+  await page.getByRole("button", { name: "进入训练日志" }).click();
+  await expect(page.getByText("今天也可以开始。")).toBeVisible();
+  const cookie = (await context.cookies()).find(c => c.name === "lift_session");
+  expect(cookie?.httpOnly).toBe(true);
+  expect(cookie?.sameSite).toBe("Strict");
+  await page.reload();
+  await expect(page.getByText("今天也可以开始。")).toBeVisible();
+  await page.getByRole("button", { name: "退出登录" }).click();
+  await expect(page).toHaveURL(/\/lift-log\/login$/);
+  expect((await context.request.get("/lift-log/api/state")).status()).toBe(401);
+  const attacker = await playwright.request.newContext({ extraHTTPHeaders: { "x-lift-user": "forged", origin: "https://invalid.example" } });
+  expect((await attacker.get("http://127.0.0.1:3015/lift-log/api/state")).status()).toBe(401);
+  expect((await attacker.post("http://127.0.0.1:3015/lift-log/api/login", { data: { key: "test-only-key" } })).status()).toBe(403);
+  await attacker.dispose();
 });
