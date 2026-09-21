@@ -57,6 +57,7 @@ test("mobile workout, local draft, goals, cardio, export and durable records", a
 
 test("API rejects unauthenticated, cross-origin, invalid and stale writes", async ({ playwright, request }) => {
   const unauth = await playwright.request.newContext({ extraHTTPHeaders: {} });
+  expect((await unauth.get("http://127.0.0.1:3015/lift-log", { maxRedirects: 0 })).status()).toBe(307);
   expect((await unauth.get("http://127.0.0.1:3015/lift-log/api/state")).status()).toBe(401);
   expect((await unauth.get("http://127.0.0.1:3015/lift-log/api/health")).status()).toBe(200);
   await unauth.dispose();
