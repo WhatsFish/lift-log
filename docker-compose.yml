@@ -1,0 +1,23 @@
+services:
+  web:
+    build: ./web
+    image: lift-log-web
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PG_HOST: db
+      PG_PORT: "5432"
+      PG_USER: lift_log
+      PG_DB: lift_log
+    ports:
+      - "127.0.0.1:3015:3000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  default:
+    name: traffic-monitor_default
+    external: true

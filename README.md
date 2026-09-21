@@ -1,0 +1,115 @@
+# Lift Log
+
+Mobile-first private strength log at `/lift-log`. Next.js App Router, React,
+Tailwind, PostgreSQL. No LLM calls or third-party training-data APIs.
+
+## Features
+
+- Rolling A/B full-body sessions, independent of weekdays. Boxing / HIIT and
+  incline / stair cardio have separate check-ins.
+- Weight, repetitions and RIR per completed set; unfinished sets never count.
+- Current strength estimates, all-time estimated PR, per-lift time-series,
+  training volume and editable e1RM goals.
+- Actual dated weight × reps assessments (1–10 reps), with optional RIR.
+- Load and volume reductions after absence, short recovery, recent hard cardio
+  and reported fatigue. Pain blocks starting a loaded session.
+- Double progression: every target set must hit the upper rep bound with at
+  least two reps remaining. Two poor exposures trigger a reduction.
+- Browser-local workout drafts survive refresh. Completed records persist in
+  PostgreSQL across devices. Explicit failures, idempotent session retries,
+  optimistic concurrency, deletion of mistakes and JSON export.
+
+### Training rules
+
+These are conservative heuristics, not medical prescriptions or a physiological
+model. A session is normally 2–3 straight working sets per lift, not top/back-off
+sets. A: squat, bench, chest-supported row, Romanian deadlift. B: deadlift, press,
+pulldown, lighter bench and squat. Two strength sessions and one boxing session
+per rolling seven days are targets, not requirements or locked days.
+
+Epley e1RM uses `weight * (1 + (reps + RIR) / 30)`, except a true maximal single
+uses the original weight. Only sets with at most 10 reps and RIR <=3 contribute.
+Historical best is never blindly used as a training weight. Current reference
+uses the median of up to three latest samples within 42 days of the latest
+sample, excluding samples before the latest explicit assessment. Dates remain
+visible and stale samples reduce prescriptions; these are not measured 1RMs.
+
+After a >=14-day gap, the three-session return ramp resets. No training history
+also starts conservatively. Phase factors are .85/.90/.95 across return
+sessions, .80 after >=28 days and .70 after >=90 days. Sample-age factors are
+.90/.80/.70 at 14/28/90 days. The stricter factor wins, rather than multiplying
+both penalties. Fatigue and inadequate recovery can reduce further. A new
+assessment updates load but does not erase time away from training. Goals never
+force increases. All weights are rounded down to configurable plate increments.
+
+The planner does not derive one exercise from a different exercise, assume an
+empty bar is safe, or encourage testing true failure. Missing data requires
+manual calibration. Changing gym machines requires recalibration.
+
+## Development
+
+```sh
+cd web
+npm ci
+npm test
+npm run typecheck
+npm run build
+```
+
+End-to-end tests use an **isolated**, disposable `postgres:16-alpine` instance on
+`127.0.0.1:55435`, database/role `lift_test`, password `ephemeral-test-only`.
+Apply `db/schema.sql` first; never use production. Reset the test schema before
+each test (the suite does this automatically). Install the Playwright headless Chromium dependency, then run
+`npm run test:e2e`. Tests exercise a real production build and real PostgreSQL.
+`npm run build` prepares the standalone static assets; `npm start` runs the same
+standalone server used in the container.
+
+## Production deployment
+
+1. Obtain operator approval before creating or editing private credentials.
+   Create independent `openssl rand -hex 32` values for `LIFT_PG_PASSWORD` and
+   `LIFT_MONITOR_PG_PASSWORD` in `~/.config/lift-log.env` (mode 600), then
+   `bash db/bootstrap.sh`. The bootstrap never changes an existing role password.
+2. Create the gitignored `.env` (mode 600), using `.env.example`, with
+   `PG_PASSWORD` set to the app role's password. Keep `PUBLIC_ORIGIN` equal to the
+   external HTTPS origin, with no path or trailing slash.
+3. `docker compose up -d --build`. App port: loopback `3015`. Container joins
+   `traffic-monitor_default`, uses the shared `db`, runs as non-root, and has a
+   read-only filesystem. PostgreSQL is the only completed-record storage.
+4. With operator approval, reuse the existing `/trading` Basic Auth file (or
+   provision a separate one). Install both `nginx/*.conf` files into
+   `/etc/nginx/snippets/`; add `include snippets/lift-log.conf;` to the HTTPS
+   server in `/etc/nginx/sites-enabled/personal-site`, preserving other routes.
+   Run `sudo nginx -t && sudo nginx -s reload`.
+5. Merge the `feat/lift-log` integration branches in `WhatsFish/site-index` and
+   `WhatsFish/status`. Append `LIFT_PG_USER=lift_log_monitor`,
+   `LIFT_PG_DB=lift_log`, and `LIFT_PG_PASSWORD=<monitor password>` to the status
+   `.env` **only with approval**, then rebuild its `web` container.
+6. Operator creates an Umami website if tracking is desired, then supplies
+   `NEXT_PUBLIC_UMAMI_SRC` and `NEXT_PUBLIC_UMAMI_WEBSITE_ID`. The layout enables
+   the script only when both are configured. No personal training fields are
+   sent as analytics events.
+7. Verify public health is 200, private routes are 401 without credentials, then
+   check authenticated phone workflows and the status group. Back up the
+   `lift_log` database using the fleet's PostgreSQL backup procedure.
+
+No cron jobs or AI calls are used, so heartbeats and AI cost events are not
+applicable. A long absence is normal usage, not a service health failure. Status
+uses a read-only view exposing only initialization and last-write metadata, not
+sets, notes, goals or PRs.
+
+### Trust boundary and dependency note
+
+This is a single-owner app behind nginx Basic Auth, not multi-user SaaS. Nginx
+must overwrite `X-Lift-User`, clear `X-Middleware-Subrequest`, and authenticate
+all private paths. Never expose port 3015 beyond loopback or publish the
+container on an untrusted network. Health returns only availability. Mutations
+require the configured same-origin JSON request; exported JSON contains private
+training information.
+
+Next.js is pinned to **14.2.35**, rather than the fleet's 14.2.18, to incorporate
+available security patches without changing the framework major or React
+version. Next 14 is an older maintenance line: review current upstream
+advisories before Internet deployment; updating to this patch is not a claim
+that all advisories against the framework line are resolved. No image
+optimization, server actions, user-authored HTML or URL rewrites are used.
